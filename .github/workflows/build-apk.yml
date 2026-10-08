@@ -25,21 +25,25 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Prepare Assets & Scaffold App
+      - name: Install Pillow for Image Generation
+        run: pip install Pillow
+
+      - name: Scaffold App with Capacitor
         run: |
           mkdir -p web_dist
 
-          # 1. Locate your HTML file
+          # Find your HTML file automatically
           HTML_FILE=$(find . -maxdepth 2 -name "*.html" ! -path "*/.*" | head -n 1)
           if [ -z "$HTML_FILE" ]; then
             echo "ERROR: No .html file found!"
             exit 1
           fi
+          echo "Using HTML: $HTML_FILE"
           cp "$HTML_FILE" web_dist/index.html
 
-          # 2. Initialize Capacitor with 3-second Splash Screen config
+          # Initialize Capacitor with 3-second Splash Screen configuration
           npm init -y
-          npm install @capacitor/core@^6.0.0 @capacitor/cli@^6.0.0 @capacitor/android@^6.0.0 @capacitor/splash-screen@^6.0.0 @capacitor/assets@^3.0.0
+          npm install @capacitor/core@^6.0.0 @capacitor/cli@^6.0.0 @capacitor/android@^6.0.0 @capacitor/splash-screen@^6.0.0
 
           cat <<EOF > capacitor.config.json
           {
@@ -61,20 +65,49 @@ jobs:
 
           npx cap add android
 
-          # 3. Check for your image and generate icon + splash screen
-          IMAGE_FILE=$(find . -maxdepth 1 \( -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" \) ! -path "*/.*" | head -n 1)
-          if [ -n "$IMAGE_FILE" ]; then
-            echo "Found image: $IMAGE_FILE. Generating custom icons and splash screen..."
-            mkdir -p assets
-            cp "$IMAGE_FILE" assets/icon-only.png
-            cp "$IMAGE_FILE" assets/icon-foreground.png
-            cp "$IMAGE_FILE" assets/splash.png
-            npx @capacitor/assets generate --android
-          else
-            echo "No image found. Using default icon."
-          fi
+      - name: Generate Custom Icons & Splash Screen
+        run: |
+          python3 - << 'EOF'
+          import os
+          from PIL import Image
 
-          npx cap sync android
+          # Find any PNG or JPG image in repository root
+          img_files = [f for f in os.listdir('.') if f.lower().endswith(('.png', '.jpg', '.jpeg')) and not f.startswith('.')]
+          if not img_files:
+              print("No custom image found. Proceeding with default icon.")
+              exit(0)
+
+          img_path = img_files[0]
+          print(f"Creating custom icons and splash screen from: {img_path}")
+          im = Image.open(img_path).convert("RGBA")
+
+          # Generate all Android icon sizes (standard, round, and adaptive)
+          densities = {
+              'mdpi': (48, 108),
+              'hdpi': (72, 162),
+              'xhdpi': (96, 216),
+              'xxhdpi': (144, 324),
+              'xxxhdpi': (192, 432),
+          }
+
+          for density, (icon_size, fg_size) in densities.items():
+              res_dir = f"android/app/src/main/res/mipmap-{density}"
+              os.makedirs(res_dir, exist_ok=True)
+              im.resize((icon_size, icon_size), Image.Resampling.LANCZOS).save(f"{res_dir}/ic_launcher.png")
+              im.resize((icon_size, icon_size), Image.Resampling.LANCZOS).save(f"{res_dir}/ic_launcher_round.png")
+              im.resize((fg_size, fg_size), Image.Resampling.LANCZOS).save(f"{res_dir}/ic_launcher_foreground.png")
+
+          # Generate 3-second splash screen images
+          for dd in ["drawable", "drawable-port", "drawable-land"]:
+              target_dir = f"android/app/src/main/res/{dd}"
+              os.makedirs(target_dir, exist_ok=True)
+              im.save(f"{target_dir}/splash.png")
+
+          print("Custom icon and splash screen applied successfully!")
+          EOF
+
+      - name: Sync Native Project
+        run: npx cap sync android
 
       - name: Compile Debug APK
         run: |
