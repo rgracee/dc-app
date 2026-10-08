@@ -1,0 +1,51 @@
+name: Build Android APK from HTML
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch: # Allows manual trigger anytime
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Scaffold App with Capacitor
+        run: |
+          # 1. Gather web files into a clean web directory
+          mkdir -p web_dist
+          find . -maxdepth 1 ! -name "." ! -name ".." ! -name "web_dist" ! -name ".git" ! -name ".github" -exec cp -r {} web_dist/ \;
+
+          # 2. Initialize Capacitor wrapper
+          npm init -y
+          npm install @capacitor/core@^6.0.0 @capacitor/cli@^6.0.0 @capacitor/android@^6.0.0
+          npx cap init "My HTML App" "com.mycompany.htmlapp" --web-dir web_dist
+          npx cap add android
+          npx cap sync android
+
+      - name: Compile Debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: my-app-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk￼Enter
