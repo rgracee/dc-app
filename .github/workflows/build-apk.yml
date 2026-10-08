@@ -43,7 +43,7 @@ jobs:
             echo "ERROR: No .html file found!"
             exit 1
           fi
-          echo "Using HTML file: $HTML_FILE"
+          echo "Using HTML: $HTML_FILE"
           cp "$HTML_FILE" web_dist/index.html
 
           # Initialize Capacitor
@@ -77,31 +77,14 @@ jobs:
           import os, sys, shutil
           from PIL import Image
 
-          print("Files in repository root:", os.listdir('.'))
-
-          # 1. Locate your image regardless of file extension or casing
-          found_image = None
-          for root, dirs, files in os.walk('.'):
-              if '/.' in root or root.startswith('.'):
-                  continue
-              for f in files:
-                  filepath = os.path.join(root, f)
-                  if any(f.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.webp']) or 'dc_image' in f.lower() or 'icon' in f.lower():
-                      try:
-                          test_img = Image.open(filepath)
-                          test_img.verify()
-                          found_image = filepath
-                          break
-                      except Exception:
-                          pass
-              if found_image:
-                  break
-
-          if not found_image:
-              print("ERROR: Could not find any valid image file in your repository!")
+          # 1. Target icon.jpg directly from root
+          image_candidates = [f for f in os.listdir('.') if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
+          if not image_candidates:
+              print("ERROR: No image file found in root!")
               sys.exit(1)
 
-          print(f"SUCCESS: Found image at: {found_image}")
+          found_image = image_candidates[0]
+          print(f"SUCCESS: Using custom image -> {found_image}")
           im = Image.open(found_image).convert("RGBA")
 
           # 2. Delete Android adaptive vector folders that cause the default blue logo
@@ -135,7 +118,7 @@ jobs:
                   im.save(os.path.join(root, "splash.png"))
                   im.resize((432, 432), Image.Resampling.LANCZOS).save(os.path.join(root, "ic_launcher_foreground.png"))
 
-          # 5. Fix Android 10 styles.xml to use direct full splash window
+          # 5. Fix Android 10 styles.xml to display your image full-screen
           styles_path = "android/app/src/main/res/values/styles.xml"
           if os.path.exists(styles_path):
               with open(styles_path, 'r') as f:
