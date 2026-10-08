@@ -25,26 +25,55 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Prepare Single HTML File and Capacitor
+      - name: Prepare Assets & Scaffold App
         run: |
           mkdir -p web_dist
 
-          # Find your .html file automatically, whatever it is named
+          # 1. Locate your HTML file
           HTML_FILE=$(find . -maxdepth 2 -name "*.html" ! -path "*/.*" | head -n 1)
-
           if [ -z "$HTML_FILE" ]; then
-            echo "ERROR: No .html file found in your repository!"
+            echo "ERROR: No .html file found!"
             exit 1
           fi
-
-          echo "Found your HTML file: $HTML_FILE"
           cp "$HTML_FILE" web_dist/index.html
 
-          # Initialize and package
+          # 2. Initialize Capacitor with 3-second Splash Screen config
           npm init -y
-          npm install @capacitor/core@^6.0.0 @capacitor/cli@^6.0.0 @capacitor/android@^6.0.0
-          npx cap init "My App" "com.singlehtml.app" --web-dir web_dist
+          npm install @capacitor/core@^6.0.0 @capacitor/cli@^6.0.0 @capacitor/android@^6.0.0 @capacitor/splash-screen@^6.0.0 @capacitor/assets@^3.0.0
+
+          cat <<EOF > capacitor.config.json
+          {
+            "appId": "com.dc.app",
+            "appName": "Daily Communication",
+            "webDir": "web_dist",
+            "plugins": {
+              "SplashScreen": {
+                "launchShowDuration": 3000,
+                "launchAutoHide": true,
+                "backgroundColor": "#ffffff",
+                "androidSplashResourceName": "splash",
+                "androidScaleType": "CENTER_CROP",
+                "showSpinner": false
+              }
+            }
+          }
+          EOF
+
           npx cap add android
+
+          # 3. Check for your image and generate icon + splash screen
+          IMAGE_FILE=$(find . -maxdepth 1 \( -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" \) ! -path "*/.*" | head -n 1)
+          if [ -n "$IMAGE_FILE" ]; then
+            echo "Found image: $IMAGE_FILE. Generating custom icons and splash screen..."
+            mkdir -p assets
+            cp "$IMAGE_FILE" assets/icon-only.png
+            cp "$IMAGE_FILE" assets/icon-foreground.png
+            cp "$IMAGE_FILE" assets/splash.png
+            npx @capacitor/assets generate --android
+          else
+            echo "No image found. Using default icon."
+          fi
+
           npx cap sync android
 
       - name: Compile Debug APK
@@ -58,4 +87,3 @@ jobs:
         with:
           name: my-app-apk
           path: '**/*.apk'
-          if-no-files-found: error￼Enter
