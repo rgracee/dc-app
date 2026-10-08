@@ -40,7 +40,7 @@ jobs:
           fi
           cp "$HTML_FILE" web_dist/index.html
 
-          # Initialize Capacitor with 3-second splash duration
+          # Initialize Capacitor
           npm init -y
           npm install @capacitor/core@^6.0.0 @capacitor/cli@^6.0.0 @capacitor/android@^6.0.0 @capacitor/splash-screen@^6.0.0
 
@@ -63,29 +63,50 @@ jobs:
           EOF
 
           npx cap add android
+          npx cap sync android
 
-      - name: Replace All Icons and Splash Screens
+      - name: Apply Custom Icons and Splash (Android 10 Compatible)
         run: |
           python3 - << 'EOF'
-          import os
+          import os, sys, shutil
           from PIL import Image
 
-          # Find your uploaded image
-          img_files = [f for f in os.listdir('.') if f.lower().endswith(('.png', '.jpg', '.jpeg')) and not f.startswith('.')]
-          if not img_files:
-              print("No custom image found. Exiting.")
-              exit(0)
+          # 1. Locate your image regardless of extension or casing
+          found_image = None
+          for root, dirs, files in os.walk('.'):
+              if '/.' in root or root.startswith('.'):
+                  continue
+              for f in files:
+                  filepath = os.path.join(root, f)
+                  if any(f.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.webp']) or 'dc_image' in f.lower() or 'icon' in f.lower():
+                      try:
+                          test_img = Image.open(filepath)
+                          test_img.verify()
+                          found_image = filepath
+                          break
+                      except Exception:
+                          pass
+              if found_image:
+                  break
 
-          img_path = img_files[0]
-          print(f"Applying custom image from: {img_path}")
-          im = Image.open(img_path).convert("RGBA")
+          if not found_image:
+              print("ERROR: Could not find your image in the repository!")
+              print("Existing files:", os.listdir('.'))
+              sys.exit(1)
 
-          # 1. Delete default Capacitor vector icons that cause the blue logo
-          default_vector = "android/app/src/main/res/drawable/ic_launcher_foreground.xml"
-          if os.path.exists(default_vector):
-              os.remove(default_vector)
+          print(f"SUCCESS: Using custom image: {found_image}")
+          im = Image.open(found_image).convert("RGBA")
 
-          # 2. Generate launcher icons for all screen densities
+          # 2. Delete Android adaptive vector folders that cause the default blue logo
+          shutil.rmtree("android/app/src/main/res/mipmap-anydpi-v26", ignore_errors=True)
+
+          # Delete any leftover foreground vector XMLs
+          for root, dirs, files in os.walk("android/app/src/main/res"):
+              for f in files:
+                  if "ic_launcher_foreground" in f and f.endswith(".xml"):
+                      os.remove(os.path.join(root, f))
+
+          # 3. Generate launcher icons for all Android densities
           densities = {
               'mdpi': (48, 108),
               'hdpi': (72, 162),
@@ -101,44 +122,28 @@ jobs:
               im.resize((icon_size, icon_size), Image.Resampling.LANCZOS).save(f"{res_dir}/ic_launcher_round.png")
               im.resize((fg_size, fg_size), Image.Resampling.LANCZOS).save(f"{res_dir}/ic_launcher_foreground.png")
 
-          # 3. Generate splash images in drawable folders (including Android 12 centered splash icon)
-          for dd in ["drawable", "drawable-port", "drawable-land", "drawable-nodpi"]:
-              target_dir = f"android/app/src/main/res/{dd}"
-              os.makedirs(target_dir, exist_ok=True)
-              im.save(f"{target_dir}/splash.png")
-              # Also create a dedicated square icon for the modern splash screen center
-              im.resize((432, 432), Image.Resampling.LANCZOS).save(f"{target_dir}/ic_launcher_foreground.png")
+          # 4. Replace splash screen in all drawable folders
+          for root, dirs, files in os.walk("android/app/src/main/res"):
+              if "drawable" in os.path.basename(root):
+                  im.save(os.path.join(root, "splash.png"))
+                  im.resize((432, 432), Image.Resampling.LANCZOS).save(os.path.join(root, "ic_launcher_foreground.png"))
 
-          print("All splash screens and app icons successfully replaced!")
+          # 5. Fix Android 10 styles.xml to use direct full splash window
+          styles_path = "android/app/src/main/res/values/styles.xml"
+          if os.path.exists(styles_path):
+              with open(styles_path, 'r') as f:
+                  style_content = f.read()
+
+              # Switch parent from Theme.SplashScreen to AppTheme.NoActionBar for Android 10/11
+              style_content = style_content.replace('parent="Theme.SplashScreen"', 'parent="AppTheme.NoActionBar"')
+              style_content = style_content.replace('@drawable/ic_launcher_foreground', '@drawable/splash')
+
+              with open(styles_path, 'w') as f:
+                  f.write(style_content)
+              print("Updated styles.xml for Android 10/11 compatibility.")
+
+          print("All assets successfully configured!")
           EOF
-
-      - name: Configure Android Theme for Splash Screen
-        run: |
-          # Ensure Android styles point to your image for the launch window
-          python3 - << 'EOF'
-          import os
-
-          styles_files = [
-              "android/app/src/main/res/values/styles.xml",
-              "android/app/src/main/res/values-v31/styles.xml"
-          ]
-
-          for sf in styles_files:
-              if os.path.exists(sf):
-                  with open(sf, 'r') as f:
-                      content = f.read()
-                  
-                  # Point windowSplashScreenAnimatedIcon to splash
-                  content = content.replace("@drawable/ic_launcher_foreground", "@drawable/splash")
-                  content = content.replace("@mipmap/ic_launcher_foreground", "@drawable/splash")
-                  
-                  with open(sf, 'w') as f:
-                      f.write(content)
-                  print(f"Updated {sf}")
-          EOF
-
-      - name: Sync Native Project
-        run: npx cap sync android
 
       - name: Compile Debug APK
         run: |
