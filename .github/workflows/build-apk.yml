@@ -3,7 +3,7 @@ name: Build Android APK from HTML
 on:
   push:
     branches: [ "main", "master" ]
-  workflow_dispatch: # Allows manual trigger anytime
+  workflow_dispatch:
 
 jobs:
   build:
@@ -25,16 +25,25 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Scaffold App with Capacitor
+      - name: Prepare Single HTML File and Capacitor
         run: |
-          # 1. Gather web files into a clean web directory
           mkdir -p web_dist
-          find . -maxdepth 1 ! -name "." ! -name ".." ! -name "web_dist" ! -name ".git" ! -name ".github" -exec cp -r {} web_dist/ \;
 
-          # 2. Initialize Capacitor wrapper
+          # Find your .html file automatically, whatever it is named
+          HTML_FILE=$(find . -maxdepth 2 -name "*.html" ! -path "*/.*" | head -n 1)
+
+          if [ -z "$HTML_FILE" ]; then
+            echo "ERROR: No .html file found in your repository!"
+            exit 1
+          fi
+
+          echo "Found your HTML file: $HTML_FILE"
+          cp "$HTML_FILE" web_dist/index.html
+
+          # Initialize and package
           npm init -y
           npm install @capacitor/core@^6.0.0 @capacitor/cli@^6.0.0 @capacitor/android@^6.0.0
-          npx cap init "My HTML App" "com.mycompany.htmlapp" --web-dir web_dist
+          npx cap init "My App" "com.singlehtml.app" --web-dir web_dist
           npx cap add android
           npx cap sync android
 
@@ -48,4 +57,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: my-app-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk￼Enter
+          path: '**/*.apk'
+          if-no-files-found: error￼Enter
