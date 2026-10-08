@@ -25,7 +25,12 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Pillow for Image Generation
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Pillow
         run: pip install Pillow
 
       - name: Scaffold App with Capacitor
@@ -38,6 +43,7 @@ jobs:
             echo "ERROR: No .html file found!"
             exit 1
           fi
+          echo "Using HTML file: $HTML_FILE"
           cp "$HTML_FILE" web_dist/index.html
 
           # Initialize Capacitor
@@ -71,7 +77,9 @@ jobs:
           import os, sys, shutil
           from PIL import Image
 
-          # 1. Locate your image regardless of extension or casing
+          print("Files in repository root:", os.listdir('.'))
+
+          # 1. Locate your image regardless of file extension or casing
           found_image = None
           for root, dirs, files in os.walk('.'):
               if '/.' in root or root.startswith('.'):
@@ -90,17 +98,16 @@ jobs:
                   break
 
           if not found_image:
-              print("ERROR: Could not find your image in the repository!")
-              print("Existing files:", os.listdir('.'))
+              print("ERROR: Could not find any valid image file in your repository!")
               sys.exit(1)
 
-          print(f"SUCCESS: Using custom image: {found_image}")
+          print(f"SUCCESS: Found image at: {found_image}")
           im = Image.open(found_image).convert("RGBA")
 
           # 2. Delete Android adaptive vector folders that cause the default blue logo
           shutil.rmtree("android/app/src/main/res/mipmap-anydpi-v26", ignore_errors=True)
 
-          # Delete any leftover foreground vector XMLs
+          # Delete leftover foreground vector XMLs
           for root, dirs, files in os.walk("android/app/src/main/res"):
               for f in files:
                   if "ic_launcher_foreground" in f and f.endswith(".xml"):
@@ -134,15 +141,14 @@ jobs:
               with open(styles_path, 'r') as f:
                   style_content = f.read()
 
-              # Switch parent from Theme.SplashScreen to AppTheme.NoActionBar for Android 10/11
               style_content = style_content.replace('parent="Theme.SplashScreen"', 'parent="AppTheme.NoActionBar"')
               style_content = style_content.replace('@drawable/ic_launcher_foreground', '@drawable/splash')
 
               with open(styles_path, 'w') as f:
                   f.write(style_content)
-              print("Updated styles.xml for Android 10/11 compatibility.")
+              print("Updated styles.xml for Android 10 compatibility.")
 
-          print("All assets successfully configured!")
+          print("All custom assets applied successfully!")
           EOF
 
       - name: Compile Debug APK
